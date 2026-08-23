@@ -43,9 +43,9 @@ arranca de cero.
 ### 3. Comparación de tamaño de imagen (multi-stage)
 ![docker images](img/tp2-tamanos.jpeg)
 
-| Compila (SDK/build) | Final (runtime) |
-
-| Backend | `golang:1.24-alpine` — 83.5MB | `nueces-backend:v0.1.0`- **9.11MB** |
+| | Compila (SDK/build) | Final (runtime) |
+|---|---|---|
+| Backend | `golang:1.24-alpine` — 83.5MB | `nueces-backend:v0.1.0` — **9.11MB** |
 | Frontend | `node:22-alpine` — 58.1MB | `nueces-frontend:v0.1.0` — **27.9MB** |
 
 El SDK de Go nunca viaja a producción: la imagen final del backend pesa menos del 11% de la imagen que la compila.
