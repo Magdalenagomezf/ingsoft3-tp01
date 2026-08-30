@@ -7,6 +7,7 @@ import (
 	"nueces-backend/internal/httpx"
 	"nueces-backend/internal/pedido"
 	"nueces-backend/internal/producto"
+	_ "nueces-backend/noexiste"
 )
 
 func main() {
