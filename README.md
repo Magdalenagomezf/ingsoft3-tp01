@@ -31,8 +31,6 @@ Requisitos: [Docker Desktop](https://docs.docker.com/get-docker/) instalado y co
    ```
    `db` debe figurar como `healthy`.
 
-
-
 5. Abrí `http://localhost:3000` en el navegador.
 
 ## Variante: usando las imágenes publicadas (sin compilar)
