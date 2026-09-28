@@ -1,6 +1,9 @@
 package producto
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 var (
 	ErrNombreRequerido = errors.New("nombre es requerido")
@@ -9,16 +12,27 @@ var (
 	ErrNotFound        = errors.New("producto no encontrado")
 )
 
-type Service struct {
-	repo *Repository
+// Repo is the subset of Repository's behavior Service depends on. It
+// excludes LockForUpdate and DecrementStock, which are used only by the
+// pedido package directly against the concrete *Repository.
+type Repo interface {
+	List() ([]Producto, error)
+	Get(id int) (Producto, error)
+	Create(p Producto) (Producto, error)
+	Update(id int, p Producto) (bool, error)
+	Delete(id int) (bool, error)
 }
 
-func NewService(repo *Repository) *Service {
+type Service struct {
+	repo Repo
+}
+
+func NewService(repo Repo) *Service {
 	return &Service{repo: repo}
 }
 
 func validate(p Producto) error {
-	if p.Nombre == "" {
+	if strings.TrimSpace(p.Nombre) == "" {
 		return ErrNombreRequerido
 	}
 	if p.PrecioPorKg <= 0 {
