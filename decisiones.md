@@ -20,7 +20,7 @@ Para que el conflicto entre las ramas A y B apareciera de verdad (y no se mergea
   abiertas.
 
 ### Uso de IA
-Usé Claude como guía durante todo el TP1: para entender la protección de rama, interpretar los
+Usé Claude como guía durante el TP1: para entender la protección de rama, interpretar los
 marcadores de conflicto antes de resolverlos, redactar la descripción de la release, y resolver
 dudas puntuales. Verifiqué cada paso ejecutándolo yo misma y mirando el resultado real en GitHub.
 
@@ -58,8 +58,7 @@ de pedidos, sin login ni pagos (eso queda para más adelante, fuera del alcance 
 ### Uso de IA
 Usé Claude Code para escribir el scaffolding inicial del backend (arquitectura en capas) y del
 frontend, a partir de un prompt donde definí el alcance, el modelo de datos y las restricciones
-explícitas (sin pagos, sin login, sin Docker generado por la IA). Usé Claude para entender la
-teoría de contenedores (namespaces, layers, multi-stage, redes de compose) y para guiarme paso a
+explícitas (sin pagos, sin login, sin Docker generado por la IA). Usé Claude para guiarme paso a
 paso escribiendo los Dockerfiles, el `docker-compose.yml` y el `docker-compose.registry.yml` — pero
 cada comando lo corrí yo misma, y verifiqué el resultado real en mi terminal y en el navegador. Cuando algo no
 coincidía con lo esperado, lo diagnostiqué con mis propios comandos antes de pedir ayuda para interpretarlo.
@@ -106,3 +105,121 @@ El workflow no tiene ni una línea de Go ni de npm — usa exactamente los mismo
 
 ### Uso de IA
 Usé Claude para traducir el video y la guía del profesor (escritos sobre .NET) a mi stack en Go, y para guiarme paso a paso. También me ayudó a diagnosticar el problema del formateador de Go que borraba el import roto. Cada paso lo corrí yo misma y verifiqué el resultado real en GitHub (los checks, el cache en el log, el badge en el README) antes de seguir.
+
+## TP5 — Calidad automatizada: tests, coverage y umbral
+
+> 🔗 **Links pendientes** (se completan cuando el pipeline corra los tests):
+> - Corrida con el resumen de cobertura y el reporte descargable: `🔗 PENDIENTE …/actions/runs/<id>`
+> - Corrida **roja por umbral**, con el número en el log: `🔗 PENDIENTE …/actions/runs/<id>`
+> - PR #1 (rojo → tests → verde → merge): `🔗 PENDIENTE …/pull/<n>`
+> - PR #2 (queda **abierto y en rojo** hasta la defensa): `🔗 PENDIENTE …/pull/<m>`
+
+### Qué dejé afuera de la cuenta de cobertura, y por qué
+
+**Backend (Go).** Excluyo por **nombre de archivo** —digo qué se saca, no qué entra—, así un
+archivo nuevo entra solo a la cuenta: si no tiene tests, el número baja y el umbral me avisa. Con
+una lista de lo que entra pasaría lo contrario: lo que me olvide de nombrar desaparecería de la
+medición sin avisar.
+
+| Excluido | Por qué |
+|---|---|
+| `main.go` | Arranque: arma los repositorios, servicios y rutas. No tiene reglas; si está mal, la app no levanta |
+| `db.go` | Arranque: lee `DATABASE_URL`, conecta y crea las tablas. Configuración, no lógica |
+| `*/model.go` | Structs con campos y tags JSON, sin ningún comportamiento |
+| `*/repository.go` | SQL contra Postgres. Su lugar natural es un test de integración contra una base real, no un unit test. Igual lo ejecutan los tests de sqlmock, pero no lo cuento |
+
+Lo que **no** excluí, a propósito: `handler.go` y `internal/httpx`. Los handlers tienen
+comportamiento —un id no numérico da 400, `ErrNotFound` da 404, un error de validación da 400 con
+su mensaje, cualquier otro da 500—, y si ese mapeo se rompe la API contesta mal. Excluirlos
+hubiera sido esconder código que no testeé, así que les escribí tests con `httptest`. `httpx`
+tiene poca lógica (`if body != nil`, `IsNoRows`) pero tiene, y los tests de los handlers la cubren.
+
+Medición: **62,2 %** midiendo todo, **94,0 %** (158 de 168 sentencias) sacando lo de la tabla.
+Mido con `-coverpkg=./...`: sin eso, Go sólo cuenta lo que ejecutan los tests del mismo paquete, y
+`httpx` daría 0 % aunque los handlers lo usen en cada respuesta.
+
+**Frontend.** `include: ['src/lib/**']` en `vite.config.js`: ahí vive la lógica pura del pedido.
+Quedan afuera los componentes de React: testearlos pide jsdom y Testing Library, y la pantalla
+completa se verifica end-to-end en el TP7. Desde vitest 4 el `include` es obligatorio: sin él,
+vitest mide sólo los archivos que los tests importan, y un archivo nuevo sin tests ni aparecería.
+Medición: **100 % de líneas (19/19) y 100 % de ramas (14/14)**.
+
+### Umbral de cobertura
+
+**Frontend: `lines: 90, branches: 90`** — las dos métricas, porque la de líneas sola es la que
+más miente. Mi medición real es 100 / 100, pero la base es chica (14 ramas) y cada rama pesa
+~7 %: con una rama sin cubrir quedo en 92,9 % y pasa; con dos, 85,7 % y frena; con tres, 78,6 %.
+Con 90 tolero un descuido, pero no una función nueva con varios caminos sin tests. Con 80 dejaría
+pasar dos ramas sin probar sobre una base de 14; con 100, cualquier refactor chico rompería el
+build y terminaría apagando el umbral.
+
+**Backend:** `PENDIENTE` — se define al integrarlo en el pipeline. Hoy mide 94,0 % de sentencias.
+Go **no mide cobertura de rama**, sólo de sentencias (`go tool cover` no tiene la métrica): el
+número del backend es de sentencias y lo reporto así.
+
+### El ejercicio de la rama sin cubrir
+
+- **Qué línea:** `frontend/src/lib/pedido.js:28`, el `: item` del ternario dentro del `map` de
+  `agregarItem`. El reporte de v8 la marcaba en *Uncovered Line #s* con 13/14 ramas.
+- **Qué entrada la recorre:** un carrito con **dos** productos (ids 1 y 2) al que le agrego el 1.
+  El test existente usaba un carrito de un solo item, así que el `map` nunca encontraba uno que
+  *no* coincidiera.
+- **Qué decidí:** agregar el test *«deja intactos los demás productos cuando suma la cantidad de
+  uno»*, que verifica que el producto 2 vuelve sin cambios. Las ramas
+  pasaron a 14/14.
+
+Y una del backend que decidí **no** cubrir: `backend/internal/pedido/handler.go`, el `500` genérico
+de `Create`. Es inalcanzable: `Service.Create` siempre devuelve un `*Error`, nunca un error
+cualquiera. No hay entrada que lo recorra; lo que correspondería es simplificar el handler, no
+agregar un test.
+
+### Mi stack contra la tabla «Tu stack, de un vistazo»
+
+| Lo que hay que lograr | Backend (Go) | Frontend (JS) |
+|---|---|---|
+| Dónde viven los tests | `*_test.go` al lado del código, mismo paquete | `algo.test.js` al lado del código |
+| Test parametrizado | table-driven con `t.Run` | `it.each` |
+| Que la dependencia entre desde afuera | interfaz `producto.Repo` recibida en `NewService` | el cliente de la API entra por parámetro (`crear` en `confirmarPedido`) |
+| Fabricar el doble | mock escrito a mano (`mockRepo`, cuenta llamadas); `go-sqlmock` para el `*sql.DB` | `vi.fn()` |
+| Medir la cobertura | `go test -coverpkg=./... -coverprofile=coverage.out` | `vitest run --coverage` (`@vitest/coverage-v8`) |
+| Umbral que rompe el build | Go no tiene bandera: `PENDIENTE` (leer el total de `go tool cover -func` y compararlo en el pipeline) | `coverage.thresholds` de vitest |
+| Qué entra en la cuenta | filtro del perfil que excluye por archivo | `include` de `coverage` |
+| Reporte legible | `go tool cover -html` | reporters `html` y `lcov` |
+| Herramientas en la etapa de tests del Dockerfile | `PENDIENTE` | `PENDIENTE` (`npm ci` sin `--omit=dev`) |
+
+### Problemas encontrados y cómo los resolví
+
+- **Nombres con sólo espacios pasaban la validación.** Escribiendo los tests vi que `validate`
+  rechazaba `""` pero aceptaba `"   "`, igual que `cliente_nombre` y `cliente_contacto` en
+  pedidos. Lo arreglé test primero: convertí esos tests en parametrizados con `""`, `"   "` y
+  `"\t"`, los vi en rojo, y recién después agregué `strings.TrimSpace`.
+- **Errores de validación que quedaban pegados en la pantalla.** Al sacar la lógica del pedido a
+  funciones puras, la validación pasó a correr después del envío; si el backend fallaba, seguían
+  en pantalla los errores del intento anterior junto al error del servidor. Los tests no lo veían
+  porque prueban la lógica, no el componente. Lo resolví dejando que el componente valide primero
+  con `validarPedido`, como antes, y `confirmarPedido` conserva su propia validación como guardia.
+- **Un mutante de la cantidad que ningún test podía matar.** Cambiar `cantidad_kg <= 0` por
+  `< 0` no ponía nada en rojo: la condición empezaba con `!item.cantidad_kg`, que ya rechaza el 0,
+  así que el `<= 0` nunca decidía nada en el borde. No faltaba un test, sobraba código: la
+  simplifiqué a `!(item.cantidad_kg > 0)` y ahora ese mutante lo matan dos tests.
+- **El orden de un `map` con sqlmock.** `pedido.Create` recorre un `map` para descontar stock, y
+  en Go ese orden es aleatorio. Con sqlmock, que espera las queries en orden, un test con dos
+  productos distintos fallaría a veces. Uso un solo producto por test (con dos items del mismo,
+  para probar que suma las cantidades).
+- **vitest 5.** Tengo Vite 8, y vitest 5.0.2 es la versión que lo soporta. `@vitest/coverage-v8`
+  tiene que ser exactamente la misma versión (5.0.2). Y desde vitest 4 el `include` de la
+  cobertura es obligatorio (ver arriba).
+- **Windows Defender bloqueando el repo.** Git fallaba al crear la rama con *«cannot lock ref …
+  No such file or directory»*, y después `npm test` y `npm run build` fallaban con `ENOENT` en
+  `node_modules/.vite-temp`. Era el *Acceso controlado a carpetas*: mi carpeta Documentos está en
+  `D:\Magdi\documentos` y queda protegida. Lo confirmé en el registro de eventos de Defender (evento
+  1123, proceso `node.exe`) y lo resolví permitiendo `git.exe`, `bash.exe` y `node.exe`, sin
+  apagar la protección.
+
+### Pendiente de escribir
+
+- Qué lógica elegí testear y por qué ésa.
+- Por qué coverage alto no garantiza calidad, con mi ejemplo.
+- El Pull Request bloqueado: qué check, en qué métrica y qué escribí para arreglarlo.
+- El refactor para poder mockear (`producto.Service` pasó de `*Repository` a la interfaz `Repo`).
+- Uso de IA.
