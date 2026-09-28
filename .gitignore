@@ -18,3 +18,9 @@ Thumbs.db
 .idea/
 
 .atl/
+
+# reportes de cobertura
+backend/coverage.out
+backend/coverage.filtered.out
+backend/coverage.html
+frontend/coverage/

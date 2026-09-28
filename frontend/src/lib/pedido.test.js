@@ -109,6 +109,20 @@ describe('agregarItem', () => {
     expect(resultado).toEqual([{ ...ITEM_VALIDO, cantidad_kg: ITEM_VALIDO.cantidad_kg + 5 }]);
     expect(carrito).toEqual(copiaOriginal);
   });
+
+  it('deja intactos los demás productos cuando suma la cantidad de uno', () => {
+    // Arrange
+    const otroItem = { producto_id: 2, nombre: 'Almendras', precio_por_kg: 200, cantidad_kg: 1 };
+    const carrito = [{ ...ITEM_VALIDO }, otroItem];
+    const producto = { id: ITEM_VALIDO.producto_id, nombre: ITEM_VALIDO.nombre, precio_por_kg: ITEM_VALIDO.precio_por_kg };
+
+    // Act
+    const resultado = agregarItem(carrito, producto, 5);
+
+    // Assert
+    expect(resultado[0].cantidad_kg).toBe(ITEM_VALIDO.cantidad_kg + 5);
+    expect(resultado[1]).toEqual(otroItem);
+  });
 });
 
 describe('totalCarrito', () => {

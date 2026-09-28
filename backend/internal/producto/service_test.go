@@ -8,6 +8,14 @@ import (
 // mockRepo is a hand-written mock implementing Repo, used to verify Service
 // behavior without touching a real database.
 type mockRepo struct {
+	listOut []Producto
+	listErr error
+
+	getCalls int
+	getArg   int
+	getOut   Producto
+	getErr   error
+
 	createCalls int
 	createArg   Producto
 	createErr   error
@@ -25,11 +33,13 @@ type mockRepo struct {
 }
 
 func (m *mockRepo) List() ([]Producto, error) {
-	return nil, nil
+	return m.listOut, m.listErr
 }
 
 func (m *mockRepo) Get(id int) (Producto, error) {
-	return Producto{}, nil
+	m.getCalls++
+	m.getArg = id
+	return m.getOut, m.getErr
 }
 
 func (m *mockRepo) Create(p Producto) (Producto, error) {
