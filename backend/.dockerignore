@@ -2,3 +2,4 @@
 nueces-backend
 nueces-backend.exe
 *.env
+coverage-out/

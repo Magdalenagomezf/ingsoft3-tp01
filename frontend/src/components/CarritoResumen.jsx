@@ -1,9 +1,11 @@
+import { totalCarrito } from '../lib/pedido';
+
 /**
  * Lista de items en el carrito con su subtotal, permite editar la
  * cantidad_kg o eliminar un item, y muestra el total acumulado.
  */
 export function CarritoResumen({ items, onEditarCantidad, onEliminar }) {
-  const total = items.reduce((acc, item) => acc + item.cantidad_kg * item.precio_por_kg, 0);
+  const total = totalCarrito(items);
 
   if (items.length === 0) {
     return <p className="text-secondary-500">Todavía no agregaste productos al pedido.</p>;
