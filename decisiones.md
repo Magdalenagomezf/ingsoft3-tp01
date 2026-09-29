@@ -153,7 +153,15 @@ Con 90 tolero un descuido, pero no una función nueva con varios caminos sin tes
 pasar dos ramas sin probar sobre una base de 14; con 100, cualquier refactor chico rompería el
 build y terminaría apagando el umbral.
 
-**Backend:** `PENDIENTE` — se define al integrarlo en el pipeline. Hoy mide 94,0 % de sentencias.
+**Backend: 85 % de sentencias**, sobre el total (no por paquete). Hoy mide **94,0 %: 158 de 168
+sentencias**, así que cada sentencia pesa ~0,6 %. Con 85 el número me frena si se pierden más de
+15 sentencias cubiertas, o si entra un archivo nuevo de más de ~17 sentencias sin ningún test (que
+es justo lo que quiero atrapar: un handler o servicio nuevo sin tests). Con 90 el margen sería de 6
+sentencias, y en Go cada `if err != nil { return … }` es una sentencia: varias de las 10 que hoy no
+cubro son ramas de error que un unit test no alcanza (como el 500 inalcanzable de `pedido.Create`),
+y cualquier refactor que sume dos o tres de ésas rompería el build y terminaría apagando el umbral.
+Para subirlo a 90 tendría que cubrir antes las ramas de error de los handlers que hoy quedan afuera.
+
 Go **no mide cobertura de rama**, sólo de sentencias (`go tool cover` no tiene la métrica): el
 número del backend es de sentencias y lo reporto así.
 
@@ -182,10 +190,10 @@ agregar un test.
 | Que la dependencia entre desde afuera | interfaz `producto.Repo` recibida en `NewService` | el cliente de la API entra por parámetro (`crear` en `confirmarPedido`) |
 | Fabricar el doble | mock escrito a mano (`mockRepo`, cuenta llamadas); `go-sqlmock` para el `*sql.DB` | `vi.fn()` |
 | Medir la cobertura | `go test -coverpkg=./... -coverprofile=coverage.out` | `vitest run --coverage` (`@vitest/coverage-v8`) |
-| Umbral que rompe el build | Go no tiene bandera: `PENDIENTE` (leer el total de `go tool cover -func` y compararlo en el pipeline) | `coverage.thresholds` de vitest |
+| Umbral que rompe el build | Go no tiene bandera: `backend/scripts/coverage.sh` lee el `total:` de `go tool cover -func`, lo compara con `UMBRAL=85` y sale con error si no llega (también si falla un test o si mide 0 archivos). Es el mismo script en mi máquina y en la etapa `test` del Dockerfile | `coverage.thresholds` de vitest |
 | Qué entra en la cuenta | filtro del perfil que excluye por archivo | `include` de `coverage` |
 | Reporte legible | `go tool cover -html` | reporters `html` y `lcov` |
-| Herramientas en la etapa de tests del Dockerfile | `PENDIENTE` | `PENDIENTE` (`npm ci` sin `--omit=dev`) |
+| Herramientas en la etapa de tests del Dockerfile | `FROM build AS test`: la imagen `golang` ya trae `go test` y `go tool cover`, y el `go mod download` del build ya bajó `go-sqlmock` (está en `go.mod`), así que los tests corren sin red. La imagen final (`alpine`) sólo copia el binario | `FROM build AS test` sobre un `npm ci` sin `--omit=dev`: vitest y `@vitest/coverage-v8` son devDependencies y entran a la etapa. nginx sólo copia `dist/` |
 
 ### Problemas encontrados y cómo los resolví
 
@@ -206,6 +214,14 @@ agregar un test.
   en Go ese orden es aleatorio. Con sqlmock, que espera las queries en orden, un test con dos
   productos distintos fallaría a veces. Uso un solo producto por test (con dos items del mismo,
   para probar que suma las cantidades).
+- **Sentencias contadas dos veces con `-coverpkg`.** Con `-coverpkg=./...` cada paquete de tests
+  escribe todos los bloques en el perfil, así que el mismo bloque aparece una vez por paquete.
+  `go tool cover` los fusiona y el 94,0 % sale bien, pero al sumar sentencias a mano me daba
+  «163 de 342». El script cuenta cada bloque una sola vez (cubierto si algún paquete lo ejecutó):
+  158 de 168, igual que la medición local.
+- **El script y los finales de línea de Windows.** Con `core.autocrlf` el `.sh` se guardaría con
+  CRLF en mi máquina y el `sh` del contenedor Linux no lo correría. Lo fijé con `.gitattributes`
+  (`*.sh text eol=lf`).
 - **vitest 5.** Tengo Vite 8, y vitest 5.0.2 es la versión que lo soporta. `@vitest/coverage-v8`
   tiene que ser exactamente la misma versión (5.0.2). Y desde vitest 4 el `include` de la
   cobertura es obligatorio (ver arriba).
