@@ -108,11 +108,42 @@ Usé Claude para traducir el video y la guía del profesor (escritos sobre .NET)
 
 ## TP5 — Calidad automatizada: tests, coverage y umbral
 
-> 🔗 **Links pendientes** (se completan cuando el pipeline corra los tests):
-> - Corrida con el resumen de cobertura y el reporte descargable: `🔗 PENDIENTE …/actions/runs/<id>`
-> - Corrida **roja por umbral**, con el número en el log: `🔗 PENDIENTE …/actions/runs/<id>`
-> - PR #1 (rojo → tests → verde → merge): `🔗 PENDIENTE …/pull/<n>`
-> - PR #2 (queda **abierto y en rojo** hasta la defensa): `🔗 PENDIENTE …/pull/<m>`
+> 🔗 **Evidencias**
+> - Resumen de cobertura y reporte descargable (artefactos `coverage-backend` y `coverage-frontend`), corrida verde final del PR #20 (commit `2528daf`): https://github.com/Magdalenagomezf/ingsoft3-tp01/actions/runs/37497868894
+> - Corrida **roja por umbral del frontend** (PR #20, commit `99e1a15`): https://github.com/Magdalenagomezf/ingsoft3-tp01/actions/runs/37497621878
+> - Corrida **roja por umbral del backend** (PR #21, commit `c2b951d`): https://github.com/Magdalenagomezf/ingsoft3-tp01/actions/runs/37502568352
+> - PR 1 (rojo → tests → verde → merge): https://github.com/Magdalenagomezf/ingsoft3-tp01/pull/20
+> - PR 2 (queda **abierto y en rojo** hasta la defensa): https://github.com/Magdalenagomezf/ingsoft3-tp01/pull/21
+
+### Qué lógica elegí testear y por qué ésa
+
+Empecé por donde un bug le cuesta plata a Mallki. El peor es **vender nuez que no hay**: si un
+pedido pasa sin stock, le prometí mercadería a un cliente y no la tengo. Por eso testeé primero
+`pedido.Service.Create` con sqlmock: que rechace el pedido cuando falta stock o el producto no
+existe (y haga rollback), y que en el camino feliz descuente el stock y confirme la transacción.
+
+Después, las **validaciones de pedido y producto**: nombre o contacto vacíos o con sólo espacios,
+precio cero o negativo, stock negativo, pedido sin items, cantidades no positivas. Son la puerta
+de entrada: un dato malo que pasa acá termina guardado y usado en todo lo demás.
+
+Y los **códigos HTTP de los handlers**: id no numérico → 400, no encontrado → 404, validación →
+400 con el mensaje del servicio, falla del repositorio → 500. El frontend decide qué mostrarle al
+cliente según ese código, así que si el mapeo se rompe la pantalla dice algo equivocado.
+
+En el frontend testeé la lógica del pedido (`validarPedido`, `agregarItem`, `totalCarrito`,
+`confirmarPedido`): el total del carrito es lo que el cliente va a pagar.
+
+### El refactor para poder mockear
+
+Antes, `producto.Service` guardaba un `*Repository`, el struct concreto que habla con Postgres por
+`*sql.DB`. No había forma de darle otra cosa: para testear la validación o el 404 tenía que
+levantar una base real. Lo cambié para que dependa de la interfaz `Repo` (los métodos que el
+servicio usa: listar, buscar, crear, actualizar, borrar), que `NewService` recibe por parámetro.
+En los tests le paso `mockRepo`, un doble escrito a mano que devuelve lo que necesito y cuenta las
+llamadas (así pruebo, por ejemplo, que un producto inválido nunca llega al repositorio).
+
+`main.go` no cambió: en Go las interfaces se cumplen solas, sin declararlo. `*Repository` ya tiene
+esos métodos, así que `producto.NewService(productoRepo)` sigue compilando igual.
 
 ### Qué dejé afuera de la cuenta de cobertura, y por qué
 
@@ -153,14 +184,10 @@ Con 90 tolero un descuido, pero no una función nueva con varios caminos sin tes
 pasar dos ramas sin probar sobre una base de 14; con 100, cualquier refactor chico rompería el
 build y terminaría apagando el umbral.
 
-**Backend: 85 % de sentencias**, sobre el total (no por paquete). Hoy mide **94,0 %: 158 de 168
-sentencias**, así que cada sentencia pesa ~0,6 %. Con 85 el número me frena si se pierden más de
-15 sentencias cubiertas, o si entra un archivo nuevo de más de ~17 sentencias sin ningún test (que
-es justo lo que quiero atrapar: un handler o servicio nuevo sin tests). Con 90 el margen sería de 6
-sentencias, y en Go cada `if err != nil { return … }` es una sentencia: varias de las 10 que hoy no
-cubro son ramas de error que un unit test no alcanza (como el 500 inalcanzable de `pedido.Create`),
-y cualquier refactor que sume dos o tres de ésas rompería el build y terminaría apagando el umbral.
-Para subirlo a 90 tendría que cubrir antes las ramas de error de los handlers que hoy quedan afuera.
+**Backend: 85 % de sentencias**, sobre el total. Hoy mide **94,0 % (158 de 168)**: con 85 me frena
+un archivo nuevo de más de ~17 sentencias sin tests, que es justo lo que quiero atrapar. No puse 90
+porque el margen sería de 6 sentencias, y varias de las 10 que no cubro son ramas de error que un
+unit test no alcanza: cualquier refactor chico rompería el build y terminaría apagando el umbral.
 
 Go **no mide cobertura de rama**, sólo de sentencias (`go tool cover` no tiene la métrica): el
 número del backend es de sentencias y lo reporto así.
@@ -195,6 +222,34 @@ agregar un test.
 | Reporte legible | `go tool cover -html` | reporters `html` y `lcov` |
 | Herramientas en la etapa de tests del Dockerfile | `FROM build AS test`: la imagen `golang` ya trae `go test` y `go tool cover`, y el `go mod download` del build ya bajó `go-sqlmock` (está en `go.mod`), así que los tests corren sin red. La imagen final (`alpine`) sólo copia el binario | `FROM build AS test` sobre un `npm ci` sin `--omit=dev`: vitest y `@vitest/coverage-v8` son devDependencies y entran a la etapa. nginx sólo copia `dist/` |
 
+### Por qué coverage alto no garantiza calidad
+
+Mi ejemplo está en `validarPedido`, en `frontend/src/lib/pedido.js`. La condición de cantidad era
+`!item.cantidad_kg || item.cantidad_kg <= 0`, y el reporte la daba 100 % cubierta, líneas y
+ramas. Pero cuando cambié `<= 0` por `< 0` (un mutante a propósito), ningún test se puso en rojo.
+La cobertura sólo dice que la línea se ejecutó, no que algún test dependa de lo que hace: el 0 ya
+lo rechazaba `!item.cantidad_kg`, así que el `<= 0` nunca decidía nada. Un número alto puede
+convivir con código que ningún test verifica de verdad. Cómo lo resolví está en *Problemas
+encontrados*.
+
+### El Pull Request bloqueado
+
+**PR #20, check `build-frontend`.** Agregué `descuentoMayorista` en
+`frontend/src/lib/descuento.js` sin tests: el build pasó, los 21 tests pasaron, y el paso de
+cobertura frenó en **las dos métricas**: **79,16 % de líneas** (19 de 24) y **63,63 % de ramas**
+(14 de 22), contra el umbral de 90 / 90.
+
+En vitest 5, una función que ningún test llama suma igual sus ramas sin cubrir; por eso cayeron las
+dos métricas. En vitest 3, el del video, sólo caían las líneas.
+
+Para arreglarlo escribí `descuento.test.js` con dos `it.each`: uno con los escalones y los bordes
+exactos (1, 10, 10,01, 25, 25,01, 50, 50,01 y 200 kg) y otro con las cantidades inválidas (0, -5 y
+`NaN`). Volvió a 100 / 100, el check quedó verde y lo mergeé.
+
+El **PR #21** muestra el freno del backend: `Cotizar` en `backend/internal/envio/envio.go`, sin
+tests, baja el total a **80,6 % (158 de 196 sentencias)** contra el 85 %, y `build-backend` falla
+con `la cobertura de sentencias (80.6%) no llega al umbral (85%)`. Queda abierto y en rojo.
+
 ### Problemas encontrados y cómo los resolví
 
 - **Nombres con sólo espacios pasaban la validación.** Escribiendo los tests vi que `validate`
@@ -214,28 +269,28 @@ agregar un test.
   en Go ese orden es aleatorio. Con sqlmock, que espera las queries en orden, un test con dos
   productos distintos fallaría a veces. Uso un solo producto por test (con dos items del mismo,
   para probar que suma las cantidades).
-- **Sentencias contadas dos veces con `-coverpkg`.** Con `-coverpkg=./...` cada paquete de tests
-  escribe todos los bloques en el perfil, así que el mismo bloque aparece una vez por paquete.
-  `go tool cover` los fusiona y el 94,0 % sale bien, pero al sumar sentencias a mano me daba
-  «163 de 342». El script cuenta cada bloque una sola vez (cubierto si algún paquete lo ejecutó):
-  158 de 168, igual que la medición local.
-- **El script y los finales de línea de Windows.** Con `core.autocrlf` el `.sh` se guardaría con
-  CRLF en mi máquina y el `sh` del contenedor Linux no lo correría. Lo fijé con `.gitattributes`
-  (`*.sh text eol=lf`).
+- **Sentencias contadas dos veces con `-coverpkg`.** Cada paquete de tests repite los mismos bloques
+  en el perfil, y sumando a mano me daba «163 de 342». El script cuenta cada bloque una sola vez: 158 de 168.
+- **El script y los finales de línea de Windows (CRLF).** En Windows el `.sh` se guardaría con CRLF y
+  el `sh` del contenedor Linux no lo correría. Lo fijé con `.gitattributes` (`*.sh text eol=lf`).
 - **vitest 5.** Tengo Vite 8, y vitest 5.0.2 es la versión que lo soporta. `@vitest/coverage-v8`
   tiene que ser exactamente la misma versión (5.0.2). Y desde vitest 4 el `include` de la
   cobertura es obligatorio (ver arriba).
-- **Windows Defender bloqueando el repo.** Git fallaba al crear la rama con *«cannot lock ref …
-  No such file or directory»*, y después `npm test` y `npm run build` fallaban con `ENOENT` en
-  `node_modules/.vite-temp`. Era el *Acceso controlado a carpetas*: mi carpeta Documentos está en
-  `D:\Magdi\documentos` y queda protegida. Lo confirmé en el registro de eventos de Defender (evento
-  1123, proceso `node.exe`) y lo resolví permitiendo `git.exe`, `bash.exe` y `node.exe`, sin
-  apagar la protección.
+- **Windows Defender bloqueando el repo.** Git no podía crear la rama y los tests de vitest fallaban
+  al escribir archivos: era el *Acceso controlado a carpetas*. Permití git, bash y node sin apagar la protección.
+- **Un commit de prueba que volvió en el PR #21.** El PR traía, además de `envio.go`, dos líneas
+  en blanco en el `README.md`: el commit `2a432ea` («prueba»). En la rama del PR #20 lo había
+  revertido, y como ese PR se mergeó con squash, a `main` no llegó nada. Pero mi `main` local
+  todavía lo tenía, y al hacer `git pull` git armó un merge que lo trajo de vuelta; la rama del
+  PR #21 salió de ahí. Lo revertí en esa rama y dejé mi `main` igual al de GitHub con
+  `git reset --hard origin/main`, después de confirmar que no tenía ningún otro commit local. Para
+  prevenirlo, antes de crear una rama corro `git log origin/main..main`: si muestra algo, mi `main`
+  no es el de GitHub.
 
-### Pendiente de escribir
+### Uso de IA
 
-- Qué lógica elegí testear y por qué ésa.
-- Por qué coverage alto no garantiza calidad, con mi ejemplo.
-- El Pull Request bloqueado: qué check, en qué métrica y qué escribí para arreglarlo.
-- El refactor para poder mockear (`producto.Service` pasó de `*Repository` a la interfaz `Repo`).
-- Uso de IA.
+Usé Claude Code para escribir los tests, los refactors, el script de cobertura y los cambios del
+pipeline, y Claude para consultar dudas puntuales. Revisé cada cambio contra la guía antes de
+commitearlo. Las decisiones fueron mías: los umbrales y su justificación, qué excluir de la cuenta
+(y dejar los handlers adentro), descartar tests duplicados, simplificar la condición de cantidad y
+redefinir las zonas de envío desde Catamarca.
