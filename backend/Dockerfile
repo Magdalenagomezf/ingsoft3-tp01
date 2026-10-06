@@ -8,7 +8,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /app/server .
 
-# ---- Etapa 2: runtime ----
+# ---- Etapa 2: tests (parte del build: ya tiene Go, el código y las dependencias) ----
+FROM build AS test
+ENTRYPOINT ["sh", "scripts/coverage.sh", "/out"]
+
+# ---- Etapa 3: runtime ----
 FROM alpine:3.20
 WORKDIR /app
 COPY --from=build /app/server .

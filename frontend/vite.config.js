@@ -10,4 +10,15 @@ export default defineConfig({
       '/api': 'http://localhost:8080',
     },
   },
+  test: {
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov', 'json-summary'],
+      include: ['src/lib/**'],
+      thresholds: {
+        lines: 90,
+        branches: 90,
+      },
+    },
+  },
 })

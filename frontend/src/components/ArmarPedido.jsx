@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useProductos } from '../hooks/useProductos';
 import { createPedido } from '../api';
+import { agregarItem, confirmarPedido, validarPedido } from '../lib/pedido';
 import { ProductoCard } from './ProductoCard';
 import { CarritoResumen } from './CarritoResumen';
 import { PageBanner } from './PageBanner';
@@ -19,25 +20,7 @@ export function ArmarPedido() {
   const [erroresValidacion, setErroresValidacion] = useState([]);
 
   function agregarAlCarrito(producto, cantidadKg) {
-    setCarrito((prev) => {
-      const existente = prev.find((item) => item.producto_id === producto.id);
-      if (existente) {
-        return prev.map((item) =>
-          item.producto_id === producto.id
-            ? { ...item, cantidad_kg: item.cantidad_kg + cantidadKg }
-            : item,
-        );
-      }
-      return [
-        ...prev,
-        {
-          producto_id: producto.id,
-          nombre: producto.nombre,
-          precio_por_kg: producto.precio_por_kg,
-          cantidad_kg: cantidadKg,
-        },
-      ];
-    });
+    setCarrito((prev) => agregarItem(prev, producto, cantidadKg));
     setConfirmacion(null);
   }
 
@@ -51,36 +34,18 @@ export function ArmarPedido() {
     setCarrito((prev) => prev.filter((item) => item.producto_id !== productoId));
   }
 
-  function validar() {
-    const errores = [];
-    if (!clienteNombre.trim()) errores.push('El nombre del cliente es requerido.');
-    if (!clienteContacto.trim()) errores.push('El contacto del cliente es requerido.');
-    if (carrito.length === 0) errores.push('Agregá al menos un producto al pedido.');
-    if (carrito.some((item) => !item.cantidad_kg || item.cantidad_kg <= 0)) {
-      errores.push('Todas las cantidades deben ser mayores a 0.');
-    }
-    return errores;
-  }
-
   async function handleSubmit(e) {
     e.preventDefault();
     setErrorEnvio(null);
     setConfirmacion(null);
 
-    const errores = validar();
+    const errores = validarPedido(clienteNombre, clienteContacto, carrito);
     setErroresValidacion(errores);
     if (errores.length > 0) return;
 
     setEnviando(true);
     try {
-      const pedido = await createPedido({
-        cliente_nombre: clienteNombre.trim(),
-        cliente_contacto: clienteContacto.trim(),
-        items: carrito.map((item) => ({
-          producto_id: item.producto_id,
-          cantidad_kg: item.cantidad_kg,
-        })),
-      });
+      const { pedido } = await confirmarPedido({ clienteNombre, clienteContacto }, carrito, createPedido);
       setConfirmacion(pedido);
       setCarrito([]);
       setClienteNombre('');
