@@ -44,10 +44,10 @@ func (s *Service) List() ([]Pedido, error) {
 }
 
 func (s *Service) Create(input PedidoInput) (Pedido, error) {
-	if input.ClienteNombre == "" {
+	if strings.TrimSpace(input.ClienteNombre) == "" {
 		return Pedido{}, badRequest("cliente_nombre es requerido")
 	}
-	if input.ClienteContacto == "" {
+	if strings.TrimSpace(input.ClienteContacto) == "" {
 		return Pedido{}, badRequest("cliente_contacto es requerido")
 	}
 	if len(input.Items) == 0 {
