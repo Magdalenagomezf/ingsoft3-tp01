@@ -21,9 +21,9 @@ export function Catalogo() {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-secondary-900 via-secondary-900/55 to-secondary-900/10" />
         <div className="relative z-10 flex max-w-3xl flex-col items-center gap-5 px-6 text-center">
-          <p className="font-heading text-4xl text-primary-400 sm:text-5xl">Frutos secos</p>
+          <p className="font-heading text-4xl text-primary-400 sm:text-5xl">Nueces de Catamarca</p>
           <h1 className="font-sans text-4xl font-extrabold uppercase leading-[1.05] tracking-tight sm:text-6xl">
-            Directo de Catamarca a tu mesa
+            Directo a tu mesa
           </h1>
           <p className="max-w-xl text-base text-secondary-100 sm:text-lg">
             Nueces mariposas, cuartos o con cascara. Pedís por kilo, coordinamos la entrega.
