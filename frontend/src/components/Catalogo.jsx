@@ -42,7 +42,7 @@ export function Catalogo() {
         <section className="bg-secondary-800 py-14 text-white">
           <div className="mx-auto w-full max-w-5xl px-4 sm:px-6">
             <p className="font-heading text-3xl text-primary-400 sm:text-4xl">Destacados</p>
-            <p className="mb-6 mt-1 text-sm text-secondary-200">Lo que más piden esta semana.</p>
+            <p className="mb-6 mt-1 text-sm text-secondary-200">Lo favorito de nuestros clientes.</p>
             <FeaturedCarousel productos={productos.slice(0, MAX_DESTACADOS)} />
           </div>
         </section>
