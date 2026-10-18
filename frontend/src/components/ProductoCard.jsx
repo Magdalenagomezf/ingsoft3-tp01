@@ -50,6 +50,7 @@ export function ProductoCard({ producto, onAgregar }) {
             min="0.01"
             step="0.01"
             placeholder="kg"
+            aria-label={`Cantidad en kg de ${producto.nombre}`}
             value={cantidad}
             disabled={sinStock}
             onChange={(e) => setCantidad(e.target.value)}
@@ -57,6 +58,7 @@ export function ProductoCard({ producto, onAgregar }) {
           />
           <button
             type="button"
+            aria-label={`Agregar ${producto.nombre} al pedido`}
             onClick={handleAgregar}
             disabled={sinStock || !cantidad}
             className="flex-1 rounded-lg bg-primary-500 px-3 py-1.5 text-sm font-bold text-secondary-900 transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary-500"

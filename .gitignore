@@ -25,3 +25,7 @@ backend/coverage.filtered.out
 backend/coverage.html
 backend/coverage-out/
 frontend/coverage/
+
+# reportes de Playwright
+frontend/playwright-report/
+frontend/test-results/

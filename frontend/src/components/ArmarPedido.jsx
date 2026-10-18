@@ -113,14 +113,14 @@ export function ArmarPedido() {
             </label>
 
             {erroresValidacion.length > 0 && (
-              <ul className="list-disc rounded-md bg-red-50 px-4 py-3 pl-8 text-red-700">
-                {erroresValidacion.map((msg) => (
+              <ul role="alert" className="list-disc rounded-md bg-red-50 px-4 py-3 pl-8 text-red-700">
+                 {erroresValidacion.map((msg) => (
                   <li key={msg}>{msg}</li>
                 ))}
               </ul>
             )}
-
-            {errorEnvio && <p className="rounded-md bg-red-50 px-4 py-3 text-red-700">{errorEnvio}</p>}
+  
+            {errorEnvio && <p role="alert" className="rounded-md bg-red-50 px-4 py-3 text-red-700">{errorEnvio}</p>}
 
             {confirmacion && (
               <p className="rounded-md bg-green-50 px-4 py-3 text-green-700">
