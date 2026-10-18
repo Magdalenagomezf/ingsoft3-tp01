@@ -100,3 +100,10 @@ func (r *Repository) DecrementStock(tx *sql.Tx, id int, cantidad float64) error 
 	_, err := tx.Exec(`UPDATE productos SET stock_kg = stock_kg - $1 WHERE id = $2`, cantidad, id)
 	return err
 }
+
+// IncrementStock increases stock_kg by cantidad for the given producto, for
+// use inside an existing transaction such as pedido's cancellation flow.
+func (r *Repository) IncrementStock(tx *sql.Tx, id int, cantidad float64) error {
+	_, err := tx.Exec(`UPDATE productos SET stock_kg = stock_kg + $1 WHERE id = $2`, cantidad, id)
+	return err
+}

@@ -88,3 +88,46 @@ func (r *Repository) List() ([]Pedido, error) {
 
 	return pedidos, nil
 }
+
+// LockPedido checks that the pedido exists, holding a row-level lock on it
+// (SELECT ... FOR UPDATE) inside an existing transaction so two concurrent
+// cancellations can't return its stock twice. It returns sql.ErrNoRows when
+// the pedido doesn't exist.
+func (r *Repository) LockPedido(tx *sql.Tx, id int) error {
+	var found int
+	return tx.QueryRow(`SELECT id FROM pedidos WHERE id = $1 FOR UPDATE`, id).Scan(&found)
+}
+
+// ListItemsForCancel reads the producto and cantidad of each item of a pedido
+// inside an existing transaction, so the stock can be returned.
+func (r *Repository) ListItemsForCancel(tx *sql.Tx, pedidoID int) ([]PedidoItem, error) {
+	rows, err := tx.Query(`SELECT producto_id, cantidad_kg FROM pedido_items WHERE pedido_id = $1`, pedidoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []PedidoItem{}
+	for rows.Next() {
+		var item PedidoItem
+		item.PedidoID = pedidoID
+		if err := rows.Scan(&item.ProductoID, &item.CantidadKg); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// DeleteItems removes every pedido_items row of a pedido inside an existing
+// transaction. It must run before DeletePedido because of the foreign key.
+func (r *Repository) DeleteItems(tx *sql.Tx, pedidoID int) error {
+	_, err := tx.Exec(`DELETE FROM pedido_items WHERE pedido_id = $1`, pedidoID)
+	return err
+}
+
+// DeletePedido removes the pedidos row inside an existing transaction.
+func (r *Repository) DeletePedido(tx *sql.Tx, id int) error {
+	_, err := tx.Exec(`DELETE FROM pedidos WHERE id = $1`, id)
+	return err
+}

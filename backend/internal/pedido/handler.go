@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"nueces-backend/internal/httpx"
 )
@@ -44,4 +45,24 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, pedidos)
+}
+
+func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "id invalido")
+		return
+	}
+
+	if err := h.service.Cancel(id); err != nil {
+		var serviceErr *Error
+		if errors.As(err, &serviceErr) {
+			httpx.WriteError(w, serviceErr.Status, serviceErr.Message)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "error cancelando pedido")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

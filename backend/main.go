@@ -36,6 +36,7 @@ func main() {
 
 	mux.HandleFunc("POST /api/pedidos", pedidoHandler.Create)
 	mux.HandleFunc("GET /api/pedidos", pedidoHandler.List)
+	mux.HandleFunc("DELETE /api/pedidos/{id}", pedidoHandler.Cancel)
 
 	log.Println("servidor escuchando en :8080")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
