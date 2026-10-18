@@ -25,6 +25,10 @@ func badRequest(message string) *Error {
 	return &Error{Status: http.StatusBadRequest, Message: message}
 }
 
+func notFound(message string) *Error {
+	return &Error{Status: http.StatusNotFound, Message: message}
+}
+
 func internalError(message string) *Error {
 	return &Error{Status: http.StatusInternalServerError, Message: message}
 }
@@ -128,4 +132,49 @@ func (s *Service) Create(input PedidoInput) (Pedido, error) {
 	}
 
 	return pedido, nil
+}
+
+// Cancel deletes a pedido and returns the stock of each of its items, all in
+// one transaction so a failure leaves both the pedido and the stock intact.
+func (s *Service) Cancel(id int) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return internalError("error iniciando transaccion")
+	}
+	defer tx.Rollback()
+
+	if err := s.repo.LockPedido(tx, id); err != nil {
+		if err == sql.ErrNoRows {
+			return notFound(fmt.Sprintf("pedido id %d no existe", id))
+		}
+		return internalError("error consultando pedido")
+	}
+
+	items, err := s.repo.ListItemsForCancel(tx, id)
+	if err != nil {
+		return internalError("error consultando items del pedido")
+	}
+
+	devueltoPorProducto := make(map[int]float64)
+	for _, item := range items {
+		devueltoPorProducto[item.ProductoID] += item.CantidadKg
+	}
+	for productoID, cantidad := range devueltoPorProducto {
+		if err := s.productoRepo.IncrementStock(tx, productoID, cantidad); err != nil {
+			return internalError("error devolviendo stock")
+		}
+	}
+
+	if err := s.repo.DeleteItems(tx, id); err != nil {
+		return internalError("error eliminando items del pedido")
+	}
+	if err := s.repo.DeletePedido(tx, id); err != nil {
+		return internalError("error eliminando pedido")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return internalError("error confirmando cancelacion")
+	}
+
+	return nil
 }

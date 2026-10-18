@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getPedidos } from '../api';
+import { deletePedido, getPedidos } from '../api';
 import { PageBanner } from './PageBanner';
 import bannerFoto from '../assets/fotos/mitades-luz.jpg';
 
@@ -23,6 +23,8 @@ export function Pedidos() {
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [cancelando, setCancelando] = useState(null);
+  const [errorCancelar, setErrorCancelar] = useState(null);
 
   useEffect(() => {
     async function cargar() {
@@ -40,6 +42,19 @@ export function Pedidos() {
     cargar();
   }, []);
 
+  async function cancelar(id) {
+    setCancelando(id);
+    setErrorCancelar(null);
+    try {
+      await deletePedido(id);
+      setPedidos((actuales) => actuales.filter((pedido) => pedido.id !== id));
+    } catch (err) {
+      setErrorCancelar(err.message);
+    } finally {
+      setCancelando(null);
+    }
+  }
+
   return (
     <div className="flex flex-col">
       <PageBanner titulo="Pedidos" foto={bannerFoto} alt="Mitades de nuez en primer plano" />
@@ -48,6 +63,11 @@ export function Pedidos() {
         {loading && <p className="text-secondary-500">Cargando pedidos...</p>}
         {error && (
           <p className="rounded-md bg-red-50 px-4 py-3 text-red-700">Error al cargar pedidos: {error}</p>
+        )}
+        {errorCancelar && (
+          <p role="alert" className="mb-4 rounded-md bg-red-50 px-4 py-3 text-red-700">
+            No se pudo cancelar el pedido: {errorCancelar}
+          </p>
         )}
         {!loading && !error && pedidos.length === 0 && (
           <p className="text-secondary-500">Todavía no hay pedidos registrados.</p>
@@ -62,13 +82,24 @@ export function Pedidos() {
               >
                 <header className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-secondary-800">Pedido #{pedido.id}</h3>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
-                      ESTADO_BADGE_CLASSES[pedido.estado] ?? ESTADO_BADGE_DEFAULT
-                    }`}
-                  >
-                    {pedido.estado}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
+                        ESTADO_BADGE_CLASSES[pedido.estado] ?? ESTADO_BADGE_DEFAULT
+                      }`}
+                    >
+                      {pedido.estado}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Cancelar pedido #${pedido.id}`}
+                      onClick={() => cancelar(pedido.id)}
+                      disabled={cancelando === pedido.id}
+                      className="rounded-md border border-red-600 px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {cancelando === pedido.id ? 'Cancelando...' : 'Cancelar'}
+                    </button>
+                  </div>
                 </header>
                 <p className="mt-1 text-secondary-700">
                   <strong>{pedido.cliente_nombre}</strong> — {pedido.cliente_contacto}

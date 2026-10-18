@@ -78,3 +78,7 @@ export function createPedido(pedido) {
     body: JSON.stringify(pedido),
   });
 }
+
+export function deletePedido(id) {
+  return request(`/pedidos/${id}`, { method: 'DELETE' });
+}
