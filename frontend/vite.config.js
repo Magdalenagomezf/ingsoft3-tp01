@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { configDefaults } from 'vitest/config'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -11,6 +12,7 @@ export default defineConfig({
     },
   },
   test: {
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov', 'json-summary'],
