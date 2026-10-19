@@ -1,5 +1,18 @@
 # Decisiones — Proyecto IngSoft3
 
+🔗 **Enlaces del TP7** (la sección del TP7 está al final del documento)
+- Paquete del backend: https://github.com/users/Magdalenagomezf/packages/container/package/ingsoft3-tp01-backend
+- Paquete del frontend: https://github.com/users/Magdalenagomezf/packages/container/package/ingsoft3-tp01-frontend
+- Cada versión de los dos paquetes está etiquetada `sha-<commit>`, con los 40 caracteres. La de PROD es `sha-fc3fdfeb7059c0a1d454f809257ad096afbf54ac`.
+- Integración en verde y e2e en rojo, frenando la promoción:
+- Commit que rompió la app: `681cb30`, *fix: createPedido apunta a /pedido* (PR #33)
+- Corrida: https://github.com/Magdalenagomezf/ingsoft3-tp01/actions/runs/39181297975
+- Reportes de esa corrida (en *Artifacts*, al pie del Summary): `playwright-report-integracion` (verde) y `playwright-report-e2e` (rojo)
+- Corrida completa en verde hasta PROD, con el arreglo (PR #34, `fc3fdfe`):https://github.com/Magdalenagomezf/ingsoft3-tp01/actions/runs/39250463867 
+- Release `v7.0.0`: https://github.com/Magdalenagomezf/ingsoft3-tp01/releases/tag/v7.0.0
+- QA: https://mallki-front-qa.onrender.com (api: https://mallki-api-qa.onrender.com)
+- PROD: https://mallki-front-prod.onrender.com (api: https://mallki-api-prod.onrender.com)
+
 ## TP1 — Control de versiones
 
 ### Por qué Git no pudo resolver el conflicto solo
@@ -417,6 +430,7 @@ no dice qué versión corre.
 
 Después la volví a correr, comprobé que QA servía el build nuevo y la aprobé.
 
+### Límites del plan gratis y cómo los maneja el pipeline
 
 - **Render**: los servicios duermen a los 15 minutos sin tráfico, y el primer pedido los despierta.
   Medí un despertar de unos 26 segundos. Las 750 horas por mes son por workspace, repartidas entre
@@ -504,3 +518,242 @@ paso a paso y para diagnosticar los problemas de Render. También me ayudó a re
 documento a partir de lo que fuimos haciendo; lo revisé y lo ajusté. Cada paso lo hice yo y lo
 comprobé en GitHub, Render y Neon antes de seguir. Las decisiones de qué aprobar y qué rechazar,
 y por qué, fueron mías.
+
+## TP7 — Contenedores en el pipeline + integración y e2e
+
+Los enlaces de este TP están arriba de todo, en «Enlaces del TP7».
+
+### Build once, deploy many
+
+En el TP6, Render reconstruía la app desde el repo en cada deploy: QA construía con el merge y PROD
+volvía a construir cuando yo aprobaba, a veces horas después. Mi Dockerfile del front arranca con
+`FROM nginx:alpine`, y `alpine` es una etiqueta que se mueve: si entre esos dos builds salía una
+versión nueva de nginx, PROD iba a correr algo que QA nunca probó, con el mismo código.
+
+Ahora la imagen se construye **una sola vez**, en el pipeline, después de los tests, y se publica
+como `sha-<commit>`. QA y PROD **ejecutan esa misma imagen**: Render ya no construye, sólo la baja.
+
+Esto también resuelve algo que anoté en el TP6, en *Qué mira mi aprobador*: no podía saber si el
+build de PROD iba a salir igual al de QA. Ya no hay un segundo build.
+
+Para publicar no agregué ningún job: los pasos que publican las imágenes ya estaban desde el TP6.
+Lo que cambió es quién las ejecuta.
+
+### Cómo pasé los servicios a imagen
+
+A los cuatro servicios de Render (api y front, en QA y en PROD) no los creé de nuevo: les cambié la
+fuente a *Existing Image*. Así conservaron su URL, sus variables y su deploy hook, y no tuve que
+volver a cargar ningún secret ni cambiar las URLs del smoke.
+
+Antes de tocar Render comprobé que las dos imágenes fueran públicas: hice `docker logout ghcr.io`
+y después `docker pull` de cada una, y las dos bajaron.
+
+Lo hice en orden: primero sólo `mallki-front-qa`, y lo desplegué una vez a mano con su hook y el
+`imgURL`. En *Events* apareció «Triggered via Deploy Hook» con el `sha-`, sin ningún build. Después
+les cambié la fuente a los otros tres, y recién al final cambié el pipeline (PR #29).
+
+En el `ci.yml`, el hook dejó de mandar `&ref=$GITHUB_SHA` («construí este commit») y pasó a mandar
+`imgURL=ghcr.io/magdalenagomezf/ingsoft3-tp01-<backend|frontend>:sha-${{ github.sha }}` («ejecutá
+esta imagen»). QA y PROD reciben exactamente la misma imagen.
+
+### Estrategia de etiquetas
+
+- **`sha-<commit>`, con los 40 caracteres, en el registry.** Nombra la imagen de ese commit. La
+  publica sólo mi pipeline, con el `GITHUB_TOKEN` de la corrida, pero no es inmutable: volver a
+  correr la corrida de un commit la republica, y con un `docker push` a mano alguien con permisos
+  podría pegarla en otra imagen; mi cadena no se daría cuenta y desplegaría algo que nadie verificó.
+  Por eso no re-corro corridas viejas para desplegar. Lo que no se mueve es el *digest*
+  (`sha256:…`), y el `imgURL` del hook lo acepta en lugar de la etiqueta. Tiene que ir completa:
+  git completa un commit corto, pero el registry compara el texto letra por letra.
+- **No publico `latest`.** Es un rótulo que se mueve con cada publicación y no dice qué hay detrás:
+  un deploy por `latest` ejecutaría «lo último que se publicó», haya pasado las pruebas o no.
+- **`v7.0.0` en git.** Es el nombre de una versión que sé que anduvo en PROD.
+- **Con qué imagen configuré Render, y por qué no es la que corre.** Para cambiar la fuente, Render
+  pide una imagen que exista. Le puse la de mi último merge de ese momento
+  (`sha-705fad4f1e00ab5395a91a731cd8022441fc95a1`). Es sólo el punto de partida: lo que corre lo
+  decide cada corrida, con el `imgURL` del hook. Por eso no uso *Manual Deploy* desde el panel:
+  despliega la imagen que quedó en *Settings*, que ya es vieja, y llevaría el entorno para atrás
+  sin que nada se ponga en rojo.
+
+### De la release a la imagen
+
+Puse el tag `v7.0.0` sobre el commit que me dio *Deployments* para `production`
+(`gh api 'repos/{owner}/{repo}/deployments?environment=production' --jq '.[0].sha'`), no sobre el
+último de `main`. Esta vez coincidían, pero no tiene por qué: si después de aprobar entra otro
+merge, el último de `main` nunca llegó a PROD.
+
+Del tag a la imagen hay un paso: `git rev-list -n1 v7.0.0` da
+`fc3fdfeb7059c0a1d454f809257ad096afbf54ac`, y los dos paquetes tienen la imagen
+`sha-fc3fdfeb7059c0a1d454f809257ad096afbf54ac`.
+
+Volver a esta versión es mandarle esa imagen al hook. En el TP6, para el rollback había que
+reconstruir desde el commit viejo. Ahora Render no construye nada: baja una imagen que ya existe.
+
+### Cómo compruebo que un entorno ejecuta mi imagen
+
+La respuesta del hook (`{"deploy":{"id":"dep-..."}}`) sólo dice que Render **aceptó** el pedido, no
+que la imagen ya esté corriendo. El smoke tampoco alcanza: pregunta si el entorno responde, y si el
+deploy hubiera fallado, Render sigue sirviendo la versión anterior, que también responde.
+
+Lo compruebo en *Events* de cada servicio: el deploy tiene que decir «Triggered via Deploy Hook» y
+nombrar el `sha-` de esa corrida, y no tiene que haber ningún build. Cerrarlo automáticamente (que
+`/health` devuelva el commit y el smoke lo compare, como anoté en el TP6) sigue pendiente.
+
+### Una función nueva para que las pruebas puedan limpiar
+
+Las pruebas que crean datos tienen que borrarlos, porque QA es uno solo y lo comparten todas las
+corridas. En mi app eso no se podía: no había forma de borrar un pedido, ni desde la api ni desde
+la pantalla, y cada pedido descuenta stock. Si la e2e armaba un pedido en cada corrida, QA se iba a
+llenar de pedidos y el stock iba a bajar hasta cero.
+
+Agregué **Cancelar pedido** (PR #30): `DELETE /api/pedidos/{id}` borra el pedido y sus items y
+devuelve el stock, todo en una transacción, y en la pantalla Pedidos hay un botón «Cancelar» en
+cada pedido. Además le sirve al negocio: hoy un pedido cargado por error no se podía deshacer.
+
+Además, cada prueba que necesita un producto lo crea con un nombre que no se repite
+(`e2e producto <hora>`) y un stock conocido, y lo borra al final. Así no dependen de los productos
+que haya en QA.
+
+### Qué probé en cada suite, y por qué ésas
+
+**Integración** (`frontend/e2e/api.spec.js`, sin navegador, contra la api de QA):
+
+1. Alta de un producto → el `GET` lo encuentra → `DELETE` → el `GET` ya no lo encuentra.
+2. Producto con nombre vacío → `400`, y la lista no cambió. El precio y el stock van válidos a
+   propósito, para que el único motivo del rechazo sea el nombre.
+3. **La que elegí:** pedido con más kg que el stock → `400` con «stock insuficiente», el stock
+   sigue igual y no apareció ningún pedido. Es la regla más cara del negocio: si se rompe, vendemos
+   nueces que no tenemos, y el que se entera es mi papá. Además prueba que la transacción hace
+   rollback en Postgres de verdad, algo que mis unitarios con `sqlmock` no pueden probar.
+
+**E2E** (`frontend/e2e/pedidos.spec.js`, Chromium contra el front de QA):
+
+1. **Creación:** armar un pedido → verlo en Pedidos → cancelarlo → ya no está, y el stock volvió.
+2. **Error:** pedir 5 kg de un producto que tiene 1 kg → el usuario ve el error de stock → no se
+ creó el pedido.
+3. **La que elegí:** un pedido confirmado sigue en Pedidos al recargar, y cancelado no vuelve. Es
+  lo que hace el cliente todos los días: si el pedido no queda guardado, se pierde la venta.
+
+Para que Playwright encontrara los controles como lo haría una persona (`getByLabel`, `getByRole`),
+tuve que agregarle a la app `aria-label` en el input de kg y en el botón «Agregar» de cada producto
+(antes eran todos iguales), y `role="alert"` en los mensajes de error.
+
+**Qué no puse en cada suite.** En e2e no repito lo que ya cubren los unitarios del TP5 (nombre o
+contacto vacíos, cantidades en cero, el total del carrito, los descuentos) ni cada error posible de
+la api: abajo es más barato y más rápido. En integración no pruebo pantallas ni el carrito, que son
+del front. Y la e2e no prueba todos los caminos: son tres flujos, los que si se rompen la app no
+sirve.
+
+### Lo que ve la integración y no ve el unitario
+
+**Un cambio de una línea que sólo atrapa la integración.** Si en `producto/repository.go` escribo
+mal una columna del `INSERT` (por ejemplo `stok_kg` en vez de `stock_kg`), los unitarios siguen en
+verde: los tests de producto usan un `mockRepo` y nunca ejecutan ese SQL. Postgres, en cambio,
+contesta `column "stok_kg" does not exist`, la api da `500`, y mi prueba de integración 1 se pone en
+rojo.
+
+Es lo que anoté en el TP5: excluí `repository.go` de la cobertura porque «su lugar natural es un
+test de integración contra una base real». Ahora lo tiene.
+
+### Integración y e2e no prueban lo mismo: el par verde/rojo
+
+La integración le habla a la api directamente, con su base real. La e2e usa la app por la pantalla,
+así que además prueba cómo el front usa la api. Por eso corren en ese orden
+(`deploy-qa → integracion → e2e → deploy-prod`): si la api está rota, la integración lo ve en
+segundos y la e2e ni corre.
+
+Para la evidencia rompí **el front** a propósito (PR #33, el commit `681cb30`): en `api.js`,
+`createPedido` pasó a llamar a `/pedido` en vez de `/pedidos`. No rompí el nombre de un campo,
+porque mis unitarios del TP5 comprueban qué manda `confirmarPedido` y lo habrían atajado antes de
+llegar a QA.
+
+El resultado fue: unitarios en verde, smoke en verde, **integración en verde (11 s)**, **e2e en
+rojo (2 min 17 s)** y `deploy-prod` salteado, sin pedirme aprobación.
+
+Lo diagnostiqué con los dos reportes, sin abrir el código. En la traza de la e2e (pestaña
+*Network*), al tocar «Confirmar pedido» el navegador mandó `POST /api/pedido` y la api contestó
+`404`; el test esperó 15 s la confirmación y no apareció. En el reporte de integración, la api con
+la ruta correcta funcionaba. **La api y la base estaban sanas; el que no usaba bien la api era el
+front** (fila 1 de la tabla de §2.5: integración verde y e2e roja apuntan al front).
+
+Si hubiera roto la api, la integración se habría puesto en rojo y la e2e no habría corrido, porque
+depende de ella (fila 2).
+
+Lo arreglé en el PR #34, la cadena quedó en verde hasta PROD, y sobre ese commit puse `v7.0.0`.
+
+Lo que este gate **no** ataja: lo que mis tres flujos no recorren, y lo que sólo pasa en PROD (otra
+base, otros datos, más carga).
+
+### Qué mira mi aprobador ahora
+
+En el TP6 aprobaba sabiendo sólo que QA respondía. Ahora, cuando `deploy-prod` me pide aprobación,
+ya pasó que la api contestó bien con su base y que un navegador usó la app entera sobre la misma
+imagen que va a PROD. Igual reviso en *Events* que QA esté corriendo el `sha-` de esa corrida antes
+de aprobar.
+
+En el TP6 escribí que para Continuous Deployment me faltaban tests end-to-end. Ahora los tengo,
+pero sigo con la aprobación manual: me sigue faltando que el smoke compruebe qué versión corre, y
+monitoreo en PROD.
+
+### Por qué integración amplia y no estrecha
+
+Mi integración corre contra la api **ya desplegada en QA**, que ejecuta la imagen de esa misma
+corrida. La otra forma era la estrecha: levantar la api y un Postgres descartable dentro del job.
+
+Con la amplia gano mucha menos configuración, y pruebo la imagen real, con la red y el proveedor en
+el medio. Pierdo velocidad, porque tiene que esperar el deploy, y aislamiento: QA es uno solo, y
+dos corridas se pueden pisar.
+
+### Cold start, timeouts y tests flaky
+
+Render gratis duerme los servicios. Lo vi el primer día: después de desplegar el front de QA a
+mano, los productos daban `502` porque la api de QA estaba dormida; al despertarla, anduvo.
+
+Por eso la config de Playwright tiene 60 s por test, 15 s por aserción y un reintento. Las esperas
+son de Playwright (`toBeVisible`, `toHaveCount`), sin `sleep`. Además, el smoke de `deploy-qa`
+corre antes y despierta QA.
+
+Un test **flaky** pasa o falla sin que cambie nada. Es peor que no tenerlo, porque el equipo se
+acostumbra a ignorar el rojo. Si un test pasa recién en el reintento, Playwright lo marca como
+flaky y la corrida queda en verde: por eso abro el reporte igual.
+
+### La misma imagen del front en QA y en PROD
+
+La imagen del front no sabe a qué api llamar: nginx manda `/api` a `BACKEND_URL`, que es una
+variable de cada servicio en Render, junto con `DNS_RESOLVER` (lo armé así en el TP6). QA y PROD
+corren la misma imagen, y lo único que cambia es esa variable. Al pasar los servicios a imagen no
+toqué ninguna variable.
+
+### Límite conocido: QA compartido
+
+QA es uno solo, y ahora lo usan dos jobs seguidos. Si mergeo dos veces seguidas, la corrida B puede
+redesplegar QA mientras las pruebas de A están corriendo, y A probaría en parte la imagen de B. Lo
+reconocería mirando en *Events* qué imagen corre y a qué hora fue el `deploy-qa` de B. En ese caso
+rechazaría la A con el motivo, y vale la B, que trae los dos cambios. Por eso hago un merge por vez
+y espero a que termine la cadena antes del siguiente.
+
+### Problemas encontrados y cómo los resolví
+
+- **`Invalid URL` en todas las e2e locales.** Había creado `playwright.config.js` fuera de
+  `frontend/`, así que Playwright corría sin config: sin `baseURL` y sin reintentos (me di cuenta
+  porque no aparecía ningún `retry #1`). Lo moví a `frontend/`.
+- **Una e2e que falla a la mitad no llega a limpiar.** La limpieza está al final de cada test, así
+  que si falla antes, no se ejecuta: después de la corrida roja quedaron 5 productos
+  `e2e producto …` en QA. Los borré por la api filtrando por ese nombre. Es un límite conocido: lo
+  detecto listando `/api/productos` de QA y buscando ese prefijo. Para resolverlo de verdad habría
+  que mover la limpieza a un `afterEach`, y en la e2e cancelar primero el pedido (si se creó),
+  porque un producto con pedidos no se puede borrar.
+- **`gh run download` no pudo descomprimir los reportes en Windows.** Los bajé desde *Artifacts*
+  en la web.
+
+### Uso de IA
+
+Usé Claude para adaptar la guía y los videos a mi stack y para guiarme paso a paso; revisamos cada
+diff antes de commitear. Claude Code implementó «Cancelar pedido» (backend, front y tests
+unitarios) a partir de un pedido mío; revisé el diff y lo probé a mano, local y en QA, antes de
+mergear.
+
+Los specs de Playwright y los jobs del pipeline los escribió Claude partiendo de los de la cátedra
+y de mi app; los corrí yo, local y en el pipeline, y puedo explicar qué verifica cada uno, contra
+qué entorno corre y qué pasa si falla. Este documento también lo redactó Claude a partir de lo que
+hicimos; lo revisé y lo ajusté. Qué aprobar y qué rechazar lo decidí yo.
