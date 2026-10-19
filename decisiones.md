@@ -757,3 +757,39 @@ Los specs de Playwright y los jobs del pipeline los escribió Claude partiendo d
 y de mi app; los corrí yo, local y en el pipeline, y puedo explicar qué verifica cada uno, contra
 qué entorno corre y qué pasa si falla. Este documento también lo redactó Claude a partir de lo que
 hicimos; lo revisé y lo ajusté. Qué aprobar y qué rechazar lo decidí yo.
+
+## TP8 — Infraestructura como código
+
+### Riel y versiones
+
+- Riel canónico: **Terraform + Neon + Render**. Terraform v1.16.6 en Windows (instalado con winget).
+- Providers fijados por versión: `kislerdm/neon` **0.18.0** y `render-oss/render` **1.9.1**, con el
+  `.terraform.lock.hcl` commiteado. El estado vive en mi máquina y está en el `.gitignore`.
+- Preprod es un entorno nuevo: proyecto de Neon `mallki-preprod` (rol + base `app_preprod`) y
+  `mallki-api-preprod` / `mallki-front-preprod` en Render (plan free, región `virginia`, como QA y
+  PROD), corriendo la imagen `sha-5aa413c…` del TP7. QA y PROD no se tocaron.
+- Adaptado a mi app: mi backend en Go lee la base de `DATABASE_URL` en formato
+  `postgres://usuario:clave@host/base?sslmode=require` (no `ConnectionStrings__Default`), y el
+  endpoint que toca la base es `/api/productos`. La cadena se arma en un `locals` con lo que
+  devuelve Neon, y la `BACKEND_URL` del front sale del `url` de su propia api.
+
+### Problemas encontrados y cómo los resolví
+
+- **winget instaló Terraform pero no creó el alias**, así que `terraform` no se reconocía ni
+  reiniciando la terminal. Agregué la carpeta del paquete al PATH de usuario.
+- **`terraform init` fallaba con `mkdir .terraform: El sistema no puede encontrar el archivo
+  especificado`.** Ni PowerShell podía crear carpetas ahí: era el *Acceso controlado a carpetas* de
+  Windows. Agregué `terraform.exe` y `powershell.exe` como aplicaciones permitidas.
+- **El primer `apply` falló con `org_id is required`**: mi cuenta de Neon trabaja con una
+  organización. Agregué `org_id` al `neon_project` (no es un secreto).
+- **En el `.gitignore` puse el comentario de `*.tfvars` en su propia línea.** En `.gitignore` el
+  `#` solo comenta al principio de la línea; escrito al final, el patrón deja de ignorar los tfvars.
+- **Medido al recrear preprod (destroy → apply):** Render devolvió las mismas URLs, sin sufijo. El
+  host de Neon cambió, y como la cadena de conexión se deriva, no hubo que tocar nada.
+
+### Uso de IA
+
+Usé Claude para seguir la guía y los videos paso a paso, y para adaptarlos a mi app (variable de
+conexión de Go, región, nombres). El HCL sale de los snippets de la guía con esas adaptaciones.
+Corrí yo cada comando, leí cada plan antes de aplicar y verifiqué el resultado en las consolas de
+Neon y Render.
