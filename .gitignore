@@ -29,3 +29,10 @@ frontend/coverage/
 # reportes de Playwright
 frontend/playwright-report/
 frontend/test-results/
+
+# terraform: el estado tiene secretos, NUNCA se versiona
+*.tfstate
+*.tfstate.*
+.terraform/
+# valores locales
+*.tfvars
