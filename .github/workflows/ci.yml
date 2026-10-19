@@ -180,9 +180,75 @@ jobs:
           echo "QA no respondio"
           exit 1
 
+  integracion:
+    runs-on: ubuntu-latest
+    needs: deploy-qa                       # QA ya está ejecutando la imagen de ESTA corrida
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install (sin browser)
+        run: npm ci                        # sin `playwright install`: estas pruebas no abren navegador
+        working-directory: ./frontend
+
+      - name: Integracion contra la api de QA
+        env:
+          API_BASE_URL: https://mallki-api-qa.onrender.com    # la API, no el front
+        run: npx playwright test e2e/api.spec.js
+        working-directory: ./frontend
+
+      - name: Publicar reporte de integracion
+        uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-integracion   # distinto del de e2e: dos iguales rompen la corrida
+          path: frontend/playwright-report
+          retention-days: 7
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: integracion                     # si la api está rota, no gastamos un browser en confirmarlo
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install + browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+        working-directory: ./frontend
+
+      - name: e2e contra QA
+        env:
+          E2E_BASE_URL: https://mallki-front-qa.onrender.com   # el FRONT de QA
+        run: npx playwright test e2e/pedidos.spec.js
+        working-directory: ./frontend
+
+      - name: Publicar reporte e2e
+        uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}            # el reporte importa MÁS cuando falla
+        with:
+          name: playwright-report-e2e
+          path: frontend/playwright-report
+          retention-days: 7
+
   deploy-prod:
     runs-on: ubuntu-latest
-    needs: deploy-qa
+    needs: e2e                             # EL gate: sin e2e verde, ni siquiera se pide aprobación
     environment: production
     concurrency:
       group: deploy-prod
@@ -218,4 +284,3 @@ jobs:
           done
           echo "PROD no respondio"
           exit 1
-          
