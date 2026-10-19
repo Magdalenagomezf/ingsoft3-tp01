@@ -73,7 +73,7 @@ export function getPedidos() {
 }
 
 export function createPedido(pedido) {
-  return request('/pedidos', {
+  return request('/pedido', {
     method: 'POST',
     body: JSON.stringify(pedido),
   });
