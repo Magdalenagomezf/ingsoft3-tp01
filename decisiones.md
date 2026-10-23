@@ -793,3 +793,88 @@ Usé Claude para seguir la guía y los videos paso a paso, y para adaptarlos a m
 conexión de Go, región, nombres). El HCL sale de los snippets de la guía con esas adaptaciones.
 Corrí yo cada comando, leí cada plan antes de aplicar y verifiqué el resultado en las consolas de
 Neon y Render.
+
+## TP9 — DevSecOps + observabilidad
+
+### Las tres protecciones del repositorio
+
+- **Dependabot** (`.github/dependabot.yml`, #38): mira `gomod` en `/backend`, `npm` en `/frontend`
+  y las actions del pipeline, una vez por semana. En *Settings → Advanced Security* prendí las
+  alertas y las actualizaciones de seguridad. Apenas entró a `main` abrió cinco PRs del front, y el
+  siguiente push avisó de 9 vulnerabilidades conocidas en `main` (2 altas, 6 moderadas, 1 baja).
+- **CodeQL** en configuración por defecto (Go, JavaScript/TypeScript y GitHub Actions). El primer
+  análisis encontró 4 veces «Workflow does not contain permissions»: `deploy-qa`, `integracion`,
+  `e2e` y `deploy-prod` no declaraban permisos. Mi repo da sólo lectura por defecto, así que hoy no
+  era explotable, pero dependía de una opción de Settings que no se ve en el código. Les agregué
+  `permissions: contents: read` (#44) y los hallazgos se cerraron.
+- **Push protection**: verificada activa en *Settings → Advanced Security → Secret Protection*.
+
+### El PR de Dependabot que mergeé
+
+Mergeé el **#39: `vite` de 8.2.2 a 8.3.4**. Es un cambio *minor* (SemVer), el changelog no
+menciona breaking changes y toca sólo `package.json` y `package-lock.json`. Me animé porque Vite
+es lo que compila mi front y sobre lo que corre Vitest: en el PR pasaron el build y los tests con
+cobertura, y en `main` el front compilado con la versión nueva pasó por QA, integración y e2e
+antes de pedir la aprobación de PROD, que aprobé porque cambia lo que les llega a los usuarios.
+
+### Monitor externo
+
+UptimeRobot, monitor HTTP(s) sobre `https://mallki-api-prod.onrender.com/health`, cada 5 minutos,
+aviso por mail. Antes de crearlo comprobé con `curl -I` que el endpoint contesta HEAD (el plan
+gratis pregunta así): dio 200 sin tocar nada, porque en Go una ruta `GET` también acepta HEAD.
+
+Caída provocada el 22/10 con *Suspend* de `mallki-api-prod` en Render:
+
+| Evento | Hora |
+|---|---|
+| Suspendí PROD | ~18:13 |
+| Mail DOWN | 18:17 |
+| Reanudé | ~18:18 |
+| Mail UP | 18:22 |
+
+**Tiempo de detección: 4 minutos.** Sin monitor me hubiera enterado cuando un usuario avisara.
+Al terminar pausé el monitor: despierto todo el mes no deja dormir a PROD y gasta casi toda la
+cuota gratuita de Render.
+
+### Sentry: qué falla, qué tarda y qué se usa
+
+- Dos proyectos: `mallki-backend` (Go, `net/http`) y `mallki-frontend` (React).
+- Back: `sentry-go` v0.45.1 envolviendo el router. El DSN llega por `SENTRY_DSN`, cargada sólo en
+  el servicio de PROD de Render: en mi máquina, en los tests y en QA Sentry queda apagado.
+- Front: `@sentry/react` en `main.jsx`, con el DSN escrito en el código. No es un secreto: sólo
+  sirve para enviar datos y de todos modos viaja en el JavaScript que baja el navegador.
+- Para ver un error agregué `GET /api/falla` con un `panic`. En Render se ve como **502** (Go corta
+  la conexión sin responder) y en Sentry llegó como Issue con el archivo y la línea. Lo saqué al
+  terminar (#47).
+
+Medido en PROD después de usar la app:
+
+| Operación | P95 | |
+|---|---|---|
+| `POST /api/pedidos` | 154 ms | **la más lenta** (412 ms vista desde el navegador) |
+| `GET /api/pedidos` | 16 ms | |
+| `GET /api/productos` | 13 ms | **la más usada** |
+
+Crear un pedido es la más lenta porque abre una transacción, bloquea los productos, descuenta stock
+e inserta el pedido con sus ítems. Con ese dato abrí la tarjeta **#46** en mi tablero.
+
+### Problemas encontrados y cómo los resolví
+
+- **La última versión de `sentry-go` (v0.50.0) pide Go 1.25 o más**, y `go get` intentó cambiar
+  solo a Go 1.26; al escribir el `go.mod` falló con *Acceso denegado*. Mi proyecto y su Dockerfile
+  están en Go 1.24, así que fijé `v0.45.1`, la última que pide 1.24, en vez de subir Go y arriesgar
+  el build del pipeline.
+- **Sentry no recibía nada en PROD.** La variable la habia cargado como `SENTRY_DNS` en vez de
+  `SENTRY_DSN`, y la había guardado sin redesplegar. La librería queda apagada en silencio si no
+  encuentra la variable, así que la app andaba igual. Corregí el nombre.
+- **Redesplegar desde Render (*Deploy latest reference*) puso una imagen anterior**: `/health`
+  respondía pero `/api/falla` daba 404. Re-corrí `deploy-prod` desde Actions para que el pipeline
+  vuelva a desplegar la imagen del commit. A PROD se llega por el pipeline, no desde la consola.
+
+### Uso de IA
+
+Usé Claude para seguir la guía y el video paso a paso y para adaptarlos a mi app (librería de
+Sentry para Go, versión compatible con Go 1.24, ecosistema `gomod` en Dependabot). Leí con su ayuda
+los hallazgos de CodeQL y el changelog de Vite antes de decidir. Hice yo cada configuración y cada
+comando, y verifiqué cada pieza funcionando: la pestaña Security, los mails del monitor y los datos
+en Sentry.
