@@ -54,8 +54,7 @@ func main() {
 	mux.HandleFunc("GET /api/pedidos", pedidoHandler.List)
 	mux.HandleFunc("DELETE /api/pedidos/{id}", pedidoHandler.Cancel)
 
-	// TP9: falla a propósito para ver un error en Sentry. SACAR al terminar el práctico.
-	mux.HandleFunc("GET /api/falla", handleFalla)
+	
 
 	// Cada pedido pasa primero por Sentry: mide cuánto tarda y reporta si algo explota.
 	sentryHandler := sentryhttp.New(sentryhttp.Options{Repanic: true})
@@ -70,6 +69,3 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func handleFalla(w http.ResponseWriter, r *http.Request) {
-	panic("Falla de prueba del TP9")
-}
