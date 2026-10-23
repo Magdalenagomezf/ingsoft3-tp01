@@ -3,6 +3,11 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"time"
+
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 
 	"nueces-backend/internal/httpx"
 	"nueces-backend/internal/pedido"
@@ -10,6 +15,17 @@ import (
 )
 
 func main() {
+	// Sentry: el DSN llega por variable de entorno (sólo está cargada en PROD).
+	// Si no está, la librería queda apagada y la aplicación anda igual.
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn:              os.Getenv("SENTRY_DSN"),
+		EnableTracing:    true,
+		TracesSampleRate: 1.0, // medir todos los pedidos
+	}); err != nil {
+		log.Printf("no se pudo iniciar Sentry: %v", err)
+	}
+	defer sentry.Flush(2 * time.Second)
+
 	db, err := connectDB()
 	if err != nil {
 		log.Fatalf("no se pudo inicializar la base de datos: %v", err)
@@ -38,12 +54,22 @@ func main() {
 	mux.HandleFunc("GET /api/pedidos", pedidoHandler.List)
 	mux.HandleFunc("DELETE /api/pedidos/{id}", pedidoHandler.Cancel)
 
+	// TP9: falla a propósito para ver un error en Sentry. SACAR al terminar el práctico.
+	mux.HandleFunc("GET /api/falla", handleFalla)
+
+	// Cada pedido pasa primero por Sentry: mide cuánto tarda y reporta si algo explota.
+	sentryHandler := sentryhttp.New(sentryhttp.Options{Repanic: true})
+
 	log.Println("servidor escuchando en :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	if err := http.ListenAndServe(":8080", sentryHandler.Handle(mux)); err != nil {
 		log.Fatalf("error en el servidor: %v", err)
 	}
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func handleFalla(w http.ResponseWriter, r *http.Request) {
+	panic("Falla de prueba del TP9")
 }
